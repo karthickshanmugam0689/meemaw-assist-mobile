@@ -1,75 +1,67 @@
-# Meemaw Assist
+# Meemaw Assist — Android (Expo + EAS)
 
-**Tech help that actually helps.** Built at Hack Kosice for the AT&T "Help the Developer"–adjacent challenge: an AI assistant that makes tech support simple, clear, and human for everyday users.
+Voice-first AI tech-support assistant for people who find technology confusing.
+Android app built with Expo SDK 54, new architecture, running on-device LLM via
+`llama.rn` with on-demand GGUF download, falling back to OpenAI when online.
 
-> Goal: if your son or your grandpa doesn't need to call you, we've succeeded.
-
-## What it does
-
-- Tap one big button, speak your tech problem out loud in any language.
-- Meemaw replies in plain, warm language — one step at a time.
-- Replies are spoken aloud with a gentle voice, so reading isn't required.
-- Works as a PWA — grandma opens a link, adds to home screen, and it behaves like an app.
-
-## Tech stack
-
-- **Next.js 14 (App Router) + TypeScript + Tailwind** — fast to ship, fast to deploy
-- **OpenAI Whisper** — speech-to-text with auto language detection
-- **OpenAI GPT-4o-mini** — conversation with a carefully engineered "kind grandchild" persona
-- **OpenAI TTS** — warm voice output (Nova) at 0.95× speed for easier listening
-- **Vercel** — one-click deploy
-
-## Setup (2 minutes)
+## Quick start
 
 ```bash
-# 1. Install
 npm install
+cp .env.example .env   # paste your OPENAI key (optional)
 
-# 2. Add your OpenAI key (from the Hack Kosice Discord thread)
-cp .env.local.example .env.local
-# then edit .env.local and paste the key
-
-# 3. Run
-npm run dev
-# open http://localhost:3000 on your laptop,
-# or http://<your-laptop-ip>:3000 on your phone on the same WiFi
-```
-
-> **Mobile tip:** Browsers require HTTPS for microphone access on non-localhost. For local phone testing, use [ngrok](https://ngrok.com/) (`ngrok http 3000`) or just deploy to Vercel.
-
-## Deploy
-
-```bash
-npx vercel
-# follow the prompts; set OPENAI_API_KEY in the Vercel dashboard
+# Cloud build (no Android Studio needed)
+npm i -g eas-cli
+eas login
+eas init                         # creates projectId in app.json
+eas build --profile development --platform android
+# install the resulting APK on your device, then:
+npx expo start --dev-client
 ```
 
 ## Architecture
 
-```
-User taps mic  ─▶  MediaRecorder captures audio
-                      │
-                      ▼
-              /api/transcribe  ─▶  Whisper  (auto-detects language)
-                      │
-                      ▼
-               /api/chat  ─▶  GPT-4o-mini (Meemaw persona)
-                      │
-                      ▼
-              /api/speak  ─▶  TTS (nova, 0.95× speed)
-                      │
-                      ▼
-                 Played aloud
-```
+- `src/screens/Home.tsx` — main conversation screen. Mirrors the web app's flow.
+- `src/screens/Settings.tsx` — on-device model download & engine-mode picker.
+- `src/lib/openai.ts` — direct OpenAI client (chat, whisper STT, TTS, vision).
+  Uses `EXPO_PUBLIC_OPENAI_API_KEY`; keys are bundled so only use test keys.
+- `src/lib/llama.ts` — llama.rn wrapper: GGUF download to `Paths.document`,
+  `initLlama()` with n\_ctx=2048, chat completion.
+- `src/lib/engine.ts` — router: `auto` prefers OpenAI, falls back to llama if
+  the network call fails. `online` / `ondevice` force a specific path.
+- `src/lib/playback.ts` — plays base64 MP3 from OpenAI TTS via expo-audio.
+- `src/lib/image.ts` — expo-image-manipulator resize to JPEG base64.
+- `src/components/*` — ChatBubble, VoiceButton, StatusIndicator, ShowMeButton,
+  AnnotatedImage (overlays bounding boxes at normalised coords, same contract
+  as the web version).
 
-## What makes this win
+## Engine modes
 
-- **Persona, not features.** Every other team will wire up OpenAI. We're the only ones thinking about how Grandma *feels* while using it.
-- **Multilingual by default.** Whisper auto-detects, the model mirrors the language. No setting to change.
-- **One step at a time.** Hard-wired in the system prompt. Every other AI assistant dumps a wall of instructions. We hand-hold.
-- **Voice-first.** No typing. Huge button. High contrast. Status always visible.
-- **Judges can test it live on their own phone** via the Vercel URL.
+- **auto** — tries OpenAI if a key is set and network is reachable, falls back
+  to on-device if the cloud call fails.
+- **online** — always OpenAI. Fails if no key.
+- **on-device** — always llama.rn. Fails if the model isn't downloaded.
 
-## Team
+Voice input (Whisper) and vision always go through OpenAI — llama.rn is chat
+only. If you ship without an OpenAI key, the mic and camera flows disable
+themselves with a friendly error.
 
-Built in 24 hours at Hack Kosice 2026 by a team of two.
+## Why this shape
+
+1. Probed `llama.rn@0.12.0-rc.9` with Expo SDK 54 first: config plugin applies
+   cleanly, postinstall downloads prebuilt JNI libs for arm64-v8a and x86_64,
+   `expo prebuild` succeeds. That confirms EAS cloud compile will work before
+   investing in the rest.
+2. Managed workflow (`android/` is git-ignored, regenerated by prebuild on EAS)
+   keeps the repo tiny and avoids needing Android Studio locally.
+3. Model downloaded on-demand (~400 MB) instead of bundled — keeps the APK
+   small enough to install over a phone's data connection at a demo.
+
+## Required permissions
+
+Android: `RECORD_AUDIO`, `CAMERA`, `INTERNET` (all declared in `app.json`).
+
+## Config plugin options
+
+`llama.rn` defaults in `app.json` are fine for Android. iOS extras (entitlements,
+C++20 flags) come from the plugin automatically.

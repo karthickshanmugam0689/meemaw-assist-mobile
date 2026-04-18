@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "Meemaw Assist",
+    "slug": "meemaw-assist",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.meemaw.assist",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Meemaw listens to your voice so she can help.",
+        "NSCameraUsageDescription": "Meemaw looks at photos so she can help with what you see.",
+        "NSPhotoLibraryUsageDescription": "Meemaw looks at photos so she can help with what you see."
+      }
+    },
+    "android": {
+      "package": "com.meemaw.assist",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "llama.rn",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Meemaw listens to your voice so she can help."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Meemaw looks at photos so she can help.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Meemaw looks at photos so she can help.",
+          "cameraPermission": "Meemaw looks at photos so she can help."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "34453436-8681-41d7-9603-ce5ce358144d"
+      }
+    },
+    "owner": "karthick.shanmugam0689",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/34453436-8681-41d7-9603-ce5ce358144d"
+    }
+  }
+}
