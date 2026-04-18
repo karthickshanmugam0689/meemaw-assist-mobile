@@ -1,14 +1,14 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { useT } from "../lib/i18n";
 
 export function ChatBubble({
   role,
   text,
-  onReplay,
 }: {
   role: "user" | "assistant";
   text: string;
-  onReplay?: () => void;
 }) {
+  const t = useT();
   const isUser = role === "user";
   return (
     <View style={[styles.wrap, isUser ? styles.wrapUser : styles.wrapAssistant]}>
@@ -19,27 +19,13 @@ export function ChatBubble({
       </View>
       <View style={[styles.meta, isUser ? styles.metaUser : styles.metaAssistant]}>
         {isUser ? (
-          <>
-            {onReplay ? (
-              <Pressable onPress={onReplay} hitSlop={8} style={styles.iconBtn}>
-                <Text style={styles.iconText}>🔊</Text>
-              </Pressable>
-            ) : null}
-            <View style={[styles.avatar, styles.avatarUser]}>
-              <Text style={styles.avatarUserText}>You</Text>
-            </View>
-          </>
+          <View style={[styles.avatar, styles.avatarUser]}>
+            <Text style={styles.avatarUserText}>{t("youLabel")}</Text>
+          </View>
         ) : (
-          <>
-            <View style={[styles.avatar, styles.avatarAssistant]}>
-              <Text style={styles.avatarAssistantText}>M</Text>
-            </View>
-            {onReplay ? (
-              <Pressable onPress={onReplay} hitSlop={8} style={styles.iconBtn}>
-                <Text style={styles.iconText}>🔊</Text>
-              </Pressable>
-            ) : null}
-          </>
+          <View style={[styles.avatar, styles.avatarAssistant]}>
+            <Text style={styles.avatarAssistantText}>M</Text>
+          </View>
         )}
       </View>
     </View>
@@ -75,14 +61,4 @@ const styles = StyleSheet.create({
   avatarAssistantText: { color: "#b45309", fontWeight: "700", fontSize: 13 },
   avatarUser: { backgroundColor: "#dbeafe" },
   avatarUserText: { color: "#2563eb", fontWeight: "700", fontSize: 11 },
-  iconBtn: {
-    minWidth: 28,
-    height: 26,
-    paddingHorizontal: 6,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#eff6ff",
-  },
-  iconText: { fontSize: 13 },
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useT } from "../lib/i18n";
 
 export type ComposeMode = "idle" | "listening" | "thinking" | "speaking";
 
@@ -18,6 +19,7 @@ export function ComposeBar({
   onMicPress: () => void;
   onCameraPress: () => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState("");
   const listening = mode === "listening";
   const busy = mode === "thinking" || mode === "speaking";
@@ -48,10 +50,10 @@ export function ComposeBar({
           onChangeText={setDraft}
           placeholder={
             pendingImage
-              ? "What do you want to know about this?"
+              ? t("describePhoto")
               : listening
-              ? "Listening…"
-              : "Type, or tap the mic to talk"
+              ? t("listening")
+              : t("typeOrTap")
           }
           placeholderTextColor="#94a3b8"
           editable={!listening && !busy}

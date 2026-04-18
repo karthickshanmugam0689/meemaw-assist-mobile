@@ -28,24 +28,119 @@ function requireKey(): string {
   return API_KEY;
 }
 
-export async function openaiChat(history: ChatMessage[]): Promise<string> {
-  const key = requireKey();
-  const res = await fetch(`${BASE}/chat/completions`, {
+export type ChatResult = {
+  text: string;
+  /** Present when the model chose to run a web search during this turn. */
+  searchQuery?: string;
+  /** True when the model decided the voice conversation is over — the UI
+   *  should speak the final reply then exit voice mode automatically. */
+  sessionDone?: boolean;
+};
+
+/** JSON schema the model must conform to. Strict mode means every assistant
+ *  turn returns exactly these two fields — no free-form text to mis-parse,
+ *  no missed session-ends. */
+const REPLY_SCHEMA = {
+  type: "object" as const,
+  additionalProperties: false,
+  required: ["reply", "end"],
+  properties: {
+    reply: {
+      type: "string",
+      description:
+        "The warm plain-English text Meemaw says. Obeys every persona rule: short sentences, one step at a time, no markdown.",
+    },
+    end: {
+      type: "boolean",
+      description:
+        "true when the voice conversation has clearly concluded (user said thanks, goodbye, issue resolved). false otherwise.",
+    },
+  },
+};
+
+async function postResponses(body: Record<string, unknown>, key: string): Promise<any> {
+  const res = await fetch(`${BASE}/responses`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`,
     },
-    body: JSON.stringify({
-      model: MODELS.chat,
-      messages: [{ role: "system", content: MEEMAW_SYSTEM_PROMPT }, ...history],
-      temperature: 0.7,
-      max_tokens: 250,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`chat ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return (data.choices?.[0]?.message?.content ?? "").trim();
+  return res.json();
+}
+
+/**
+ * One call, one JSON reply.
+ *
+ * Uses OpenAI's Responses API with `web_search_preview` (so the model can
+ * pick up current info when needed) and a strict JSON schema on the output.
+ * The schema guarantees three fields on every reply — no tool-call loops,
+ * no prompt-engineering bargaining, no confabulated "buttons" that don't
+ * render. If the model wants to show a Maps button, it sets `findNearby`.
+ * If the voice conversation is over, it sets `end: true`. Otherwise both
+ * are null/false and only `reply` drives the UI.
+ */
+export async function openaiChat(history: ChatMessage[]): Promise<ChatResult> {
+  const key = requireKey();
+  const data = await postResponses(
+    {
+      model: MODELS.chat,
+      instructions: MEEMAW_SYSTEM_PROMPT,
+      input: history.map((m) => ({ role: m.role, content: m.content })),
+      tools: [{ type: "web_search_preview" }],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "meemaw_reply",
+          strict: true,
+          schema: REPLY_SCHEMA,
+        },
+      },
+      max_output_tokens: 600,
+    },
+    key
+  );
+
+  // Capture a web-search query for the chip, if one happened.
+  let searchQuery: string | undefined;
+  const output = Array.isArray(data?.output) ? data.output : [];
+  for (const item of output) {
+    if (item?.type === "web_search_call") {
+      const q = item?.action?.query;
+      if (typeof q === "string" && q.trim()) searchQuery = q.trim();
+      break;
+    }
+  }
+
+  // Collect the JSON text of the final message (strict schema guarantees
+  // it's valid JSON matching REPLY_SCHEMA).
+  let rawJson = "";
+  for (const item of output) {
+    if (item?.type !== "message") continue;
+    const parts = Array.isArray(item.content) ? item.content : [];
+    for (const p of parts) {
+      if (p?.type === "output_text" && typeof p.text === "string") {
+        rawJson += p.text;
+      }
+    }
+  }
+  if (!rawJson && typeof data.output_text === "string") rawJson = data.output_text;
+
+  let parsed: { reply?: string; end?: boolean } = {};
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    // Strict mode makes this unreachable, but degrade gracefully if it happens.
+    return { text: rawJson.trim() };
+  }
+
+  return {
+    text: (parsed.reply ?? "").trim(),
+    searchQuery,
+    sessionDone: parsed.end === true ? true : undefined,
+  };
 }
 
 /** Whisper transcription of an audio file URI (file://...). */

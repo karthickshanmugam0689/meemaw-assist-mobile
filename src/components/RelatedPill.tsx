@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useT } from "../lib/i18n";
 
 export function RelatedPill({
   query,
@@ -9,11 +10,12 @@ export function RelatedPill({
   score: number;
   onPress?: () => void;
 }) {
+  const t = useT();
   const content = (
     <>
       <Text style={styles.icon}>💭</Text>
       <View style={{ flex: 1 }}>
-        <Text style={styles.label}>I remember a similar question</Text>
+        <Text style={styles.label}>{t("iRemember")}</Text>
         <Text style={styles.query} numberOfLines={1}>
           “{query}”
         </Text>

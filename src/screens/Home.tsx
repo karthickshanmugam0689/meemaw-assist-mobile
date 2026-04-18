@@ -19,6 +19,7 @@ import { ChatBubble } from "../components/ChatBubble";
 import { ComposeBar, type ComposeMode } from "../components/ComposeBar";
 import { AnnotatedImage } from "../components/AnnotatedImage";
 import { RelatedPill } from "../components/RelatedPill";
+import { SearchChip } from "../components/SearchChip";
 import {
   hasOpenAIKey,
   openaiTranscribe,
@@ -29,7 +30,8 @@ import {
 import { chatWithMode, type EngineMode } from "../lib/engine";
 import { speak, stopSpeaking } from "../lib/tts";
 import { resizeToJpegBase64 } from "../lib/image";
-import { OPENING_LINE } from "../lib/prompts";
+import { getLanguage, languageSystemMessage } from "../lib/languages";
+import { LanguageProvider, tFor } from "../lib/i18n";
 import { canEmbed, embed } from "../lib/embeddings";
 import {
   appendTurn,
@@ -47,28 +49,44 @@ import {
 } from "../lib/memory";
 import { SettingsPanel } from "./Settings";
 import { HistoryScreen } from "./History";
+import { VoiceModeScreen, type VoiceState } from "./VoiceMode";
+import { waitForSilence } from "../lib/vad";
 
 type UIMessage = ChatMessage & {
   image?: { url: string; regions: Region[] };
   related?: { query: string; score: number; conversationId: string };
+  /** Set only on fresh turns where the model actually ran a web search.
+   *  Not persisted — when a conversation reopens from History, the chip
+   *  doesn't re-appear. */
+  searchQuery?: string;
 };
 
 type InputMode = "voice" | "text";
-type Panel = "chat" | "settings" | "history";
+type Panel = "chat" | "settings" | "history" | "voice";
 type Snapshot = { activeConvId: string | null; messages: UIMessage[] };
 
 export function Home() {
   const [composeMode, setComposeMode] = useState<ComposeMode>("idle");
   const [engineMode, setEngineMode] = useState<EngineMode>("auto");
+  const [language, setLanguage] = useState<string>("auto");
   const [inputMode, setInputMode] = useState<InputMode>("text");
-  const [messages, setMessages] = useState<UIMessage[]>([
-    { role: "assistant", content: OPENING_LINE },
+  const [messages, setMessages] = useState<UIMessage[]>(() => [
+    { role: "assistant", content: tFor("auto")("opening") },
   ]);
   const [error, setError] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("chat");
   const [kbHeight, setKbHeight] = useState(0);
   const [visitingFrom, setVisitingFrom] = useState<Snapshot | null>(null);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceLastUser, setVoiceLastUser] = useState<string | null>(null);
+  const [voiceLastReply, setVoiceLastReply] = useState<string | null>(null);
+  const voiceCancelRef = useRef(false);
+  const voiceTapStopRef = useRef(false);
+  /** Consecutive empty/silent turns in voice mode. Resets on any real speech.
+   *  Two in a row = user is gone → exit gracefully. */
+  const silentTurnsRef = useRef(0);
+  const messagesRef = useRef<UIMessage[]>([]);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const ttsHandleRef = useRef<{ stop: () => void } | null>(null);
@@ -89,11 +107,22 @@ export function Home() {
 
   // Track keyboard height so we can manually push the compose bar above it.
   // KeyboardAvoidingView is unreliable on Android when edgeToEdgeEnabled is on.
+  //
+  // Complex IMEs (Hindi/Tamil/Arabic suggestion strips, Japanese kana picker)
+  // under-report their height in keyboardDidShow, so we add a safety buffer.
+  // The cost is a small empty strip above simple keyboards; the alternative
+  // is a text box hidden behind the keyboard, which we never want.
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const BUFFER = Platform.OS === "android" ? 32 : 0;
     const subs = [
-      Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height)),
+      Keyboard.addListener(showEvent, (e) => {
+        setKbHeight(e.endCoordinates.height + BUFFER);
+        // Also snap the latest message into view in case the chip/card is
+        // taller than the viewport shrinkage.
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+      }),
       Keyboard.addListener(hideEvent, () => setKbHeight(0)),
     ];
     return () => subs.forEach((s) => s.remove());
@@ -103,28 +132,29 @@ export function Home() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }, [messages, composeMode]);
 
-  const replay = useCallback((text: string) => {
-    ttsHandleRef.current?.stop();
-    const handle = speak(text);
-    ttsHandleRef.current = handle;
-  }, []);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
-  const speakIfVoiceNow = useCallback(async (text: string, spoken: boolean) => {
-    if (!spoken) {
-      setComposeMode("idle");
-      return;
-    }
-    ttsHandleRef.current?.stop();
-    setComposeMode("speaking");
-    const handle = speak(text);
-    ttsHandleRef.current = handle;
-    try {
-      await handle.done;
-    } finally {
-      if (ttsHandleRef.current === handle) ttsHandleRef.current = null;
-      setComposeMode("idle");
-    }
-  }, []);
+  const speakIfVoiceNow = useCallback(
+    async (text: string, spoken: boolean) => {
+      if (!spoken) {
+        setComposeMode("idle");
+        return;
+      }
+      ttsHandleRef.current?.stop();
+      setComposeMode("speaking");
+      const handle = speak(text, getLanguage(language).ttsCode);
+      ttsHandleRef.current = handle;
+      try {
+        await handle.done;
+      } finally {
+        if (ttsHandleRef.current === handle) ttsHandleRef.current = null;
+        setComposeMode("idle");
+      }
+    },
+    [language]
+  );
 
   /** Search past conversations for a semantically similar query. Silent on any error. */
   const recall = useCallback(async (query: string): Promise<SearchHit[]> => {
@@ -153,7 +183,7 @@ export function Home() {
 
   /** Reconstruct UI messages from a stored conversation. */
   const materialize = useCallback((conv: Conversation): UIMessage[] => {
-    const out: UIMessage[] = [{ role: "assistant", content: OPENING_LINE }];
+    const out: UIMessage[] = [{ role: "assistant", content: tFor(language)("opening") }];
     for (const t of conv.turns) {
       out.push({ role: "user", content: t.query });
       if (t.image) {
@@ -170,7 +200,7 @@ export function Home() {
       }
     }
     return out;
-  }, []);
+  }, [language]);
 
   /** Open a conversation by ID as the new active conversation. */
   const openConversation = useCallback(
@@ -284,13 +314,18 @@ export function Home() {
           content: `Earlier the user asked: "${top.turn.query}". You said: "${top.turn.reply}". If this new question is essentially the same, remind them of what worked. If it's different, answer fresh.`,
         });
       }
+      // Pin the reply language if the user has chosen one explicitly.
+      const langMsg = languageSystemMessage(language);
+      if (langMsg) {
+        historyForLLM.unshift({ role: "system", content: langMsg });
+      }
 
       const next: UIMessage[] = [...messages, { role: "user", content: userText }];
       setMessages(next);
       setComposeMode("thinking");
 
       try {
-        const { reply } = await chatWithMode(historyForLLM, engineMode);
+        const { reply, searchQuery } = await chatWithMode(historyForLLM, engineMode);
         setMessages((m) => [
           ...m,
           {
@@ -303,6 +338,7 @@ export function Home() {
                   conversationId: top.conversationId,
                 }
               : undefined,
+            ...(searchQuery ? { searchQuery } : {}),
           },
         ]);
         if (top) hasShownPillRef.current = true;
@@ -331,9 +367,7 @@ export function Home() {
       try {
         const perm = await requestRecordingPermissionsAsync();
         if (!perm.granted) {
-          setError(
-            "Microphone permission is needed to talk. Tap the mic again after allowing access in phone Settings → Apps → Meemaw."
-          );
+          setError(tFor(language)("micPermission"));
           return;
         }
         await recorder.prepareToRecordAsync();
@@ -372,10 +406,200 @@ export function Home() {
     }
   }, [composeMode, recorder, respond]);
 
+  /** Run one voice turn end-to-end: record (with VAD), transcribe, reply, speak.
+   *  Shares every side-effect (memory, recall, search, nearby) with the text
+   *  path by building the same history the chat path uses. */
+  const doVoiceTurn = useCallback(async (): Promise<boolean> => {
+    if (voiceCancelRef.current) return false;
+    if (!hasOpenAIKey()) {
+      setError(
+        "Voice mode needs an OpenAI key for transcription. Type instead, or set EXPO_PUBLIC_OPENAI_API_KEY."
+      );
+      return false;
+    }
+
+    // 1. Listen
+    setVoiceState("listening");
+    voiceTapStopRef.current = false;
+
+    try {
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "mic error");
+      return false;
+    }
+
+    // Run VAD and tap-to-stop in parallel.
+    const vadPromise = waitForSilence(recorder, voiceCancelRef, {
+      silenceThreshold: -38,
+      silenceMs: 1500,
+      maxMs: 15000,
+      preSpeechTimeoutMs: 8000,
+    });
+    const tapPromise = (async () => {
+      while (!voiceCancelRef.current && !voiceTapStopRef.current) {
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      return voiceCancelRef.current ? "cancelled" : "tap";
+    })();
+    const result = await Promise.race([vadPromise, tapPromise]);
+
+    try {
+      await recorder.stop();
+    } catch {}
+    if (voiceCancelRef.current || result === "cancelled") return false;
+
+    const uri = recorder.uri;
+    if (!uri) return true; // skip silently
+
+    // 2. Transcribe
+    setVoiceState("thinking");
+    let transcript = "";
+    try {
+      transcript = await openaiTranscribe(uri);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "transcription failed");
+      return false;
+    }
+    if (!transcript.trim()) {
+      silentTurnsRef.current += 1;
+      // Two silent turns in a row ≈ 16 s of no speech → the user has wandered off.
+      if (silentTurnsRef.current >= 2) {
+        voiceCancelRef.current = true;
+        setPanel("chat");
+        return false;
+      }
+      return !voiceCancelRef.current;
+    }
+    // Real speech — clear the silence counter.
+    silentTurnsRef.current = 0;
+    if (voiceCancelRef.current) return true;
+
+    // 3. Add user message + call chat engine (reusing full memory/recall path)
+    const currentMessages = messagesRef.current;
+    const hits = hasShownPillRef.current ? [] : await recall(transcript);
+    const top = hits[0];
+
+    const historyForLLM: ChatMessage[] = [
+      ...currentMessages.map((m) => ({ role: m.role, content: m.content })),
+      { role: "user", content: transcript },
+    ];
+    if (top) {
+      historyForLLM.splice(historyForLLM.length - 1, 0, {
+        role: "system",
+        content: `Earlier the user asked: "${top.turn.query}". You said: "${top.turn.reply}". If this new question is essentially the same, remind them of what worked. If it's different, answer fresh.`,
+      });
+    }
+    const langMsg = languageSystemMessage(language);
+    if (langMsg) historyForLLM.unshift({ role: "system", content: langMsg });
+
+    setVoiceLastUser(transcript);
+    setInputMode("voice");
+    setMessages((m) => [...m, { role: "user", content: transcript }]);
+
+    let reply = "";
+    let searchQuery: string | undefined;
+    let sessionDone = false;
+    try {
+      const res = await chatWithMode(historyForLLM, engineMode);
+      reply = res.reply;
+      searchQuery = res.searchQuery;
+      sessionDone = !!res.sessionDone;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "unknown error");
+      return false;
+    }
+    if (voiceCancelRef.current) return false;
+
+    setMessages((m) => [
+      ...m,
+      {
+        role: "assistant",
+        content: reply,
+        related: top
+          ? {
+              query: top.turn.query,
+              score: top.score,
+              conversationId: top.conversationId,
+            }
+          : undefined,
+        ...(searchQuery ? { searchQuery } : {}),
+      },
+    ]);
+    if (top) hasShownPillRef.current = true;
+    remember(transcript, reply);
+    setVoiceLastReply(reply);
+
+    // 4. Speak — tap-to-interrupt re-uses voiceTapStopRef
+    setVoiceState("speaking");
+    voiceTapStopRef.current = false;
+    ttsHandleRef.current?.stop();
+    const handle = speak(reply, getLanguage(language).ttsCode);
+    ttsHandleRef.current = handle;
+    const ttsDone = handle.done;
+    // If user taps circle during speaking, stop TTS and move on to listen
+    const tapInterrupt = (async () => {
+      while (!voiceCancelRef.current && !voiceTapStopRef.current) {
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      if (voiceTapStopRef.current) handle.stop();
+    })();
+    await Promise.race([ttsDone, tapInterrupt]);
+    if (ttsHandleRef.current === handle) ttsHandleRef.current = null;
+
+    // If the model decided the conversation is done, tell the loop to exit
+    // (the farewell has already been spoken above).
+    if (sessionDone) {
+      voiceCancelRef.current = true;
+      setPanel("chat");
+      return false;
+    }
+    return true;
+  }, [recorder, language, engineMode, recall, remember]);
+
+  /** Voice-mode loop: starts when panel becomes "voice", stops on exit. */
+  useEffect(() => {
+    if (panel !== "voice") return;
+    voiceCancelRef.current = false;
+    silentTurnsRef.current = 0;
+    setVoiceState("idle");
+    setVoiceLastUser(null);
+    setVoiceLastReply(null);
+
+    let active = true;
+    (async () => {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        setError(
+          "Microphone permission is needed for voice mode. Allow access in phone Settings → Apps → Meemaw."
+        );
+        setPanel("chat");
+        return;
+      }
+      while (active && !voiceCancelRef.current && panel === "voice") {
+        const ok = await doVoiceTurn();
+        if (!ok) break;
+      }
+      setVoiceState("idle");
+    })();
+
+    return () => {
+      active = false;
+      voiceCancelRef.current = true;
+      try {
+        ttsHandleRef.current?.stop();
+      } catch {}
+      try {
+        recorder.stop().catch(() => {});
+      } catch {}
+    };
+  }, [panel, doVoiceTurn, recorder]);
+
   const handleCamera = useCallback(async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      setError("Camera permission is needed to take a picture.");
+      setError(tFor(language)("cameraPermission"));
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -459,8 +683,29 @@ export function Home() {
       <SettingsPanel
         mode={engineMode}
         onModeChange={setEngineMode}
+        language={language}
+        onLanguageChange={setLanguage}
         onClose={() => setPanel("chat")}
       />
+    );
+  }
+
+  if (panel === "voice") {
+    return (
+      <LanguageProvider value={language}>
+        <VoiceModeScreen
+          state={voiceState}
+          lastUserMessage={voiceLastUser}
+          lastReply={voiceLastReply}
+          onTapCircle={() => {
+            voiceTapStopRef.current = true;
+          }}
+          onExit={() => {
+            voiceCancelRef.current = true;
+            setPanel("chat");
+          }}
+        />
+      </LanguageProvider>
     );
   }
 
@@ -472,7 +717,7 @@ export function Home() {
           activeConvIdRef.current = null;
           hasShownPillRef.current = false;
           setVisitingFrom(null);
-          setMessages([{ role: "assistant", content: OPENING_LINE }]);
+          setMessages([{ role: "assistant", content: tFor(language)("opening") }]);
           setPendingImage(null);
           setError(null);
           setPanel("chat");
@@ -486,24 +731,46 @@ export function Home() {
   }
 
   return (
+    <LanguageProvider value={language}>
     <View style={[styles.root, { paddingBottom: kbHeight }]}>
       <View style={styles.header}>
-        <View style={styles.titleRow}>
+        <Pressable
+          onPress={() => setPanel("settings")}
+          hitSlop={6}
+          style={({ pressed }) => [styles.titleRow, { opacity: pressed ? 0.7 : 1 }]}
+        >
           <View style={styles.logo}>
             <Text style={styles.logoText}>M</Text>
           </View>
           <View>
             <Text style={styles.title}>Meemaw</Text>
-            <Text style={styles.subtitle}>Tech help that actually helps</Text>
+            <View style={styles.subtitleRow}>
+              <Text style={styles.langChip}>
+                🌍 {getLanguage(language).nativeName}
+              </Text>
+            </View>
           </View>
-        </View>
+        </Pressable>
         <View style={styles.headerBtns}>
+          <Pressable
+            onPress={() => {
+              // Stop any in-flight tap-mode recording first.
+              try { recorder.stop().catch(() => {}); } catch {}
+              ttsHandleRef.current?.stop();
+              ttsHandleRef.current = null;
+              setPanel("voice");
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.talkBtn, { opacity: pressed ? 0.85 : 1 }]}
+          >
+            <Text style={styles.talkBtnText}>{tFor(language)("talkBtn")}</Text>
+          </Pressable>
           <Pressable
             onPress={() => {
               activeConvIdRef.current = null;
               hasShownPillRef.current = false;
               setVisitingFrom(null);
-              setMessages([{ role: "assistant", content: OPENING_LINE }]);
+              setMessages([{ role: "assistant", content: tFor(language)("opening") }]);
               setPendingImage(null);
               setError(null);
             }}
@@ -519,13 +786,6 @@ export function Home() {
           >
             <Text style={styles.menuText}>🕒</Text>
           </Pressable>
-          <Pressable
-            onPress={() => setPanel("settings")}
-            hitSlop={8}
-            style={({ pressed }) => [styles.menuBtn, { opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={styles.menuText}>⋯</Text>
-          </Pressable>
         </View>
       </View>
 
@@ -537,9 +797,7 @@ export function Home() {
             { opacity: pressed ? 0.85 : 1 },
           ]}
         >
-          <Text style={styles.backBannerText}>
-            ← Back to your current conversation
-          </Text>
+          <Text style={styles.backBannerText}>{tFor(language)("backToCurrent")}</Text>
         </Pressable>
       ) : null}
 
@@ -560,8 +818,8 @@ export function Home() {
             <ChatBubble
               role={m.role as "user" | "assistant"}
               text={m.content}
-              onReplay={() => replay(m.content)}
             />
+            {m.searchQuery ? <SearchChip query={m.searchQuery} /> : null}
             {m.image ? (
               <View style={{ marginTop: 6, marginBottom: 8, marginHorizontal: 4 }}>
                 <AnnotatedImage src={m.image.url} regions={m.image.regions} />
@@ -571,7 +829,7 @@ export function Home() {
         ))}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {composeMode === "thinking" ? (
-          <Text style={styles.hint}>Meemaw is thinking…</Text>
+          <Text style={styles.hint}>{tFor(language)("thinking")}</Text>
         ) : null}
       </ScrollView>
 
@@ -584,6 +842,7 @@ export function Home() {
         onCameraPress={handleCamera}
       />
     </View>
+    </LanguageProvider>
   );
 }
 
@@ -611,6 +870,16 @@ const styles = StyleSheet.create({
   logoText: { color: "white", fontWeight: "800", fontSize: 18 },
   title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
   subtitle: { fontSize: 13, color: "#64748b" },
+  subtitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  langChip: {
+    fontSize: 11,
+    color: "#475569",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
   headerBtns: { flexDirection: "row", gap: 8 },
   menuBtn: {
     width: 36,
@@ -632,6 +901,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563eb",
   },
   newBtnText: { color: "white", fontSize: 14, fontWeight: "700" },
+  talkBtn: {
+    paddingHorizontal: 12,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#16a34a",
+  },
+  talkBtnText: { color: "white", fontSize: 13, fontWeight: "700" },
   chat: { flex: 1 },
   error: { color: "#dc2626", textAlign: "center", marginTop: 10, paddingHorizontal: 12 },
   hint: { color: "#94a3b8", textAlign: "center", marginTop: 6, fontStyle: "italic" },

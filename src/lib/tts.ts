@@ -2,14 +2,19 @@ import * as Speech from "expo-speech";
 
 /**
  * Speak text using the phone's native TTS. Returns a handle that resolves when
- * playback finishes and can be stopped early.
+ * playback finishes and can be stopped early. Pass a BCP-47 language tag
+ * (e.g. "es-ES") to pick the matching voice.
  */
-export function speak(text: string): { stop: () => void; done: Promise<void> } {
+export function speak(
+  text: string,
+  language?: string
+): { stop: () => void; done: Promise<void> } {
   let settled = false;
   const done = new Promise<void>((resolve) => {
     Speech.speak(text, {
       rate: 0.95,
       pitch: 1.0,
+      language,
       onDone: () => {
         if (settled) return;
         settled = true;

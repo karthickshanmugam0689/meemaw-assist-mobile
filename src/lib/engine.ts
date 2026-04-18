@@ -4,25 +4,40 @@ import { isModelDownloaded, llamaChat } from "./llama";
 
 export type EngineMode = "auto" | "online" | "ondevice";
 
+export type EngineResult = {
+  reply: string;
+  used: "openai" | "llama";
+  /** Present when the online path decided to run a web search. */
+  searchQuery?: string;
+  /** True when the model decided the voice conversation has concluded. */
+  sessionDone?: boolean;
+};
+
 export async function chatWithMode(
   history: ChatMessage[],
   mode: EngineMode
-): Promise<{ reply: string; used: "openai" | "llama" }> {
+): Promise<EngineResult> {
   const canOnline = hasOpenAIKey();
   const canOnDevice = isModelDownloaded();
 
   if (mode === "online") {
     if (!canOnline) throw new Error("Online mode picked but no OpenAI key is set.");
-    return { reply: await openaiChat(history), used: "openai" };
+    const res = await openaiChat(history);
+    return {
+      reply: res.text,
+      used: "openai",
+      searchQuery: res.searchQuery,
+      sessionDone: res.sessionDone,
+    };
   }
   if (mode === "ondevice") {
     if (!canOnDevice) throw new Error("On-device mode picked but model isn't downloaded.");
     return { reply: await llamaChat(history), used: "llama" };
   }
-  // auto: prefer online when we have a key, fall back to llama otherwise
   if (canOnline) {
     try {
-      return { reply: await openaiChat(history), used: "openai" };
+      const res = await openaiChat(history);
+      return { reply: res.text, used: "openai", searchQuery: res.searchQuery };
     } catch (err) {
       if (canOnDevice) return { reply: await llamaChat(history), used: "llama" };
       throw err;

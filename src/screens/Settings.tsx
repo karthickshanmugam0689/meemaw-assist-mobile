@@ -16,14 +16,19 @@ import {
 } from "../lib/llama";
 import { hasOpenAIKey } from "../lib/openai";
 import type { EngineMode } from "../lib/engine";
+import { LANGUAGES, getLanguage } from "../lib/languages";
 
 export function SettingsPanel({
   mode,
   onModeChange,
+  language,
+  onLanguageChange,
   onClose,
 }: {
   mode: EngineMode;
   onModeChange: (m: EngineMode) => void;
+  language: string;
+  onLanguageChange: (code: string) => void;
   onClose: () => void;
 }) {
   const [downloaded, setDownloaded] = useState(isModelDownloaded());
@@ -66,6 +71,37 @@ export function SettingsPanel({
         <Pressable onPress={onClose}>
           <Text style={styles.close}>Done</Text>
         </Pressable>
+      </View>
+
+      <Text style={styles.section}>Language</Text>
+      <Text style={styles.hint}>
+        Pick how Meemaw should reply. “Auto-detect” follows whatever language
+        you write in. Once you choose a language, Meemaw will speak and reply
+        in it from then on.
+      </Text>
+      <Text style={styles.currentLang}>
+        Current: {getLanguage(language).name}
+        {getLanguage(language).nativeName !== getLanguage(language).name
+          ? ` (${getLanguage(language).nativeName})`
+          : ""}
+      </Text>
+      <View style={styles.langGrid}>
+        {LANGUAGES.map((l) => {
+          const selected = l.code === language;
+          return (
+            <Pressable
+              key={l.code}
+              onPress={() => onLanguageChange(l.code)}
+              style={[styles.langBtn, selected && styles.langBtnActive]}
+            >
+              <Text
+                style={[styles.langLabel, selected && styles.langLabelActive]}
+              >
+                {l.nativeName}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <Text style={styles.section}>Engine</Text>
@@ -162,4 +198,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   dangerText: { color: "#dc2626", fontWeight: "600" },
+  currentLang: { fontSize: 14, color: "#0f172a", marginBottom: 8, fontWeight: "600" },
+  langGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  langBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#cbd5f5",
+    backgroundColor: "white",
+  },
+  langBtnActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
+  langLabel: { color: "#0f172a", fontSize: 14 },
+  langLabelActive: { color: "white", fontWeight: "700" },
 });
