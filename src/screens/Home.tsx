@@ -227,6 +227,7 @@ export function Home() {
         topK: 2,
         minScore: 0.75,
         excludeConversationId: activeConvIdRef.current ?? undefined,
+        queryText: query,
       });
     } catch (err) {
       console.warn("recall failed", err);

@@ -181,6 +181,41 @@ export type SearchHit = {
   score: number;
 };
 
+// Embeddings from small general-purpose LLMs collapse "X not working" phrases
+// together regardless of what X is. Cosine alone says "printer not working"
+// ≈ "laptop not working" at 0.95 — useless for recall. We gate on device
+// words: if both queries mention a device and the devices differ, skip.
+const DEVICE_WORDS = [
+  "laptop", "computer", "pc", "desktop",
+  "phone", "mobile", "tablet", "ipad",
+  "printer", "scanner",
+  "tv", "television", "soundbar", "speaker", "headphones", "earbuds",
+  "router", "modem", "wifi",
+  "remote", "charger", "cable", "battery",
+  "fridge", "microwave", "oven", "washer", "dryer",
+  "camera", "watch",
+];
+
+function deviceTokens(text: string): Set<string> {
+  const lower = text.toLowerCase();
+  const out = new Set<string>();
+  for (const w of DEVICE_WORDS) {
+    const re = new RegExp(`\\b${w}\\b`, "i");
+    if (re.test(lower)) out.add(w);
+  }
+  return out;
+}
+
+function devicesCompatible(a: string, b: string): boolean {
+  const da = deviceTokens(a);
+  const db = deviceTokens(b);
+  // If either side doesn't mention a device, fall through to embedding-only.
+  if (da.size === 0 || db.size === 0) return true;
+  // Both mention a device — require at least one in common.
+  for (const d of da) if (db.has(d)) return true;
+  return false;
+}
+
 /**
  * Flatten every turn across every conversation and search by cosine similarity.
  * `excludeConversationId` lets the caller skip the active conversation so the
@@ -194,10 +229,12 @@ export function searchTurns(
     topK?: number;
     minScore?: number;
     excludeConversationId?: string;
+    queryText?: string;
   } = {}
 ): SearchHit[] {
   const topK = options.topK ?? 2;
   const minScore = options.minScore ?? 0.75;
+  const queryText = options.queryText ?? "";
   const hits: SearchHit[] = [];
   for (const c of conversations) {
     if (options.excludeConversationId && c.id === options.excludeConversationId) {
@@ -205,6 +242,7 @@ export function searchTurns(
     }
     for (const t of c.turns) {
       if (t.source !== source || t.dim !== queryEmbedding.length) continue;
+      if (queryText && !devicesCompatible(queryText, t.query)) continue;
       const score = cosine(queryEmbedding, t.embedding);
       if (score >= minScore) {
         hits.push({ turn: t, conversationId: c.id, score });
