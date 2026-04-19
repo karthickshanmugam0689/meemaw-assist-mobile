@@ -81,7 +81,7 @@ export function HistoryScreen({
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>Nothing here yet</Text>
           <Text style={styles.emptyText}>
-            When you ask Meemaw a question, the conversation is saved to your
+            When you ask FlashFix a question, the conversation is saved to your
             phone. Nothing is sent anywhere.
           </Text>
         </View>

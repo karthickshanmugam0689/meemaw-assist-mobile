@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useT } from "../lib/i18n";
 
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking";
@@ -9,14 +10,25 @@ export function VoiceModeScreen({
   lastReply,
   onTapCircle,
   onExit,
+  diagnosticsEnabled,
+  onDiagnostics,
+  onRecordPhoto,
+  onUploadPhoto,
+  onLiveAssist,
 }: {
   state: VoiceState;
   lastUserMessage: string | null;
   lastReply: string | null;
   onTapCircle: () => void;
   onExit: () => void;
+  diagnosticsEnabled?: boolean;
+  onDiagnostics?: () => void;
+  onRecordPhoto?: () => void;
+  onUploadPhoto?: () => void;
+  onLiveAssist?: () => void;
 }) {
   const t = useT();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const emoji =
     state === "listening" ? "🎤" : state === "speaking" ? "🗣️" : "💭";
@@ -42,14 +54,36 @@ export function VoiceModeScreen({
       : t("voiceSaySomething");
 
   const canTapToStop = state === "listening" || state === "speaking";
+  const showShowProblem = Boolean(
+    onRecordPhoto || onUploadPhoto || onLiveAssist
+  );
+
+  const pick = (fn?: () => void) => {
+    setSheetOpen(false);
+    if (fn) fn();
+  };
 
   return (
     <View style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.title}>{t("voiceModeTitle")}</Text>
-        <Pressable onPress={onExit} hitSlop={10} style={styles.exitBtn}>
-          <Text style={styles.exitText}>✕</Text>
-        </Pressable>
+        <View style={styles.headerRight}>
+          {diagnosticsEnabled && onDiagnostics ? (
+            <Pressable
+              onPress={onDiagnostics}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.diagChip,
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={styles.diagChipText}>{t("voiceDiagnostics")}</Text>
+            </Pressable>
+          ) : null}
+          <Pressable onPress={onExit} hitSlop={10} style={styles.exitBtn}>
+            <Text style={styles.exitText}>✕</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.center}>
@@ -72,6 +106,18 @@ export function VoiceModeScreen({
         ) : null}
       </View>
 
+      {showShowProblem ? (
+        <Pressable
+          onPress={() => setSheetOpen(true)}
+          style={({ pressed }) => [
+            styles.showProblemBtn,
+            { opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          <Text style={styles.showProblemText}>{t("voiceShowProblem")}</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.transcriptBlock}>
         {lastUserMessage ? (
           <View style={[styles.msg, styles.msgUser]}>
@@ -83,7 +129,7 @@ export function VoiceModeScreen({
         ) : null}
         {lastReply ? (
           <View style={[styles.msg, styles.msgAssistant]}>
-            <Text style={styles.msgLabel}>Meemaw</Text>
+            <Text style={styles.msgLabel}>FlashFix</Text>
             <Text style={styles.msgText} numberOfLines={5}>
               {lastReply}
             </Text>
@@ -100,6 +146,72 @@ export function VoiceModeScreen({
       >
         <Text style={styles.footerBtnText}>{t("voiceExit")}</Text>
       </Pressable>
+
+      <Modal
+        visible={sheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSheetOpen(false)}
+      >
+        <Pressable
+          style={styles.sheetBackdrop}
+          onPress={() => setSheetOpen(false)}
+        >
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>{t("voiceSheetTitle")}</Text>
+            <Text style={styles.sheetHint}>{t("voiceSheetHint")}</Text>
+
+            {onRecordPhoto ? (
+              <Pressable
+                onPress={() => pick(onRecordPhoto)}
+                style={({ pressed }) => [
+                  styles.tile,
+                  { opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={styles.tileLabel}>{t("voiceTakePhoto")}</Text>
+                <Text style={styles.tileHint}>{t("voiceTakePhotoHint")}</Text>
+              </Pressable>
+            ) : null}
+
+            {onUploadPhoto ? (
+              <Pressable
+                onPress={() => pick(onUploadPhoto)}
+                style={({ pressed }) => [
+                  styles.tile,
+                  { opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={styles.tileLabel}>{t("voiceUploadPhoto")}</Text>
+                <Text style={styles.tileHint}>{t("voiceUploadPhotoHint")}</Text>
+              </Pressable>
+            ) : null}
+
+            {onLiveAssist ? (
+              <Pressable
+                onPress={() => pick(onLiveAssist)}
+                style={({ pressed }) => [
+                  styles.tile,
+                  { opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={styles.tileLabel}>{t("voiceLiveVideo")}</Text>
+                <Text style={styles.tileHint}>{t("voiceLiveVideoHint")}</Text>
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              onPress={() => setSheetOpen(false)}
+              style={({ pressed }) => [
+                styles.sheetCancel,
+                { opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Text style={styles.sheetCancelText}>{t("voiceCancel")}</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -112,7 +224,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
+  diagChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#cbd5f5",
+  },
+  diagChipText: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
   exitBtn: {
     width: 36,
     height: 36,
@@ -141,6 +263,17 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 72 },
   stateLabel: { marginTop: 24, fontSize: 18, fontWeight: "700" },
   tapHint: { marginTop: 6, fontSize: 13, color: "#94a3b8" },
+  showProblemBtn: {
+    marginTop: 4,
+    marginBottom: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#cbd5f5",
+    alignItems: "center",
+  },
+  showProblemText: { fontSize: 17, fontWeight: "700", color: "#0f172a" },
   transcriptBlock: { gap: 8, marginTop: 8 },
   msg: {
     padding: 12,
@@ -171,4 +304,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   footerBtnText: { color: "#475569", fontSize: 15, fontWeight: "700" },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.45)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#fffbf5",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 28,
+    gap: 12,
+  },
+  sheetTitle: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
+  sheetHint: { fontSize: 14, color: "#64748b", marginBottom: 4 },
+  tile: {
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  tileLabel: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
+  tileHint: { fontSize: 14, color: "#64748b", marginTop: 4 },
+  sheetCancel: {
+    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+  },
+  sheetCancelText: { fontSize: 15, fontWeight: "700", color: "#475569" },
 });

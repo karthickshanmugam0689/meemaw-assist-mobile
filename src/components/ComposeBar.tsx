@@ -11,6 +11,8 @@ export function ComposeBar({
   onSendText,
   onMicPress,
   onCameraPress,
+  onVideoPress,
+  onLivePress,
 }: {
   mode: ComposeMode;
   pendingImage: string | null;
@@ -18,6 +20,8 @@ export function ComposeBar({
   onSendText: (text: string) => void;
   onMicPress: () => void;
   onCameraPress: () => void;
+  onVideoPress: () => void;
+  onLivePress: () => void;
 }) {
   const t = useT();
   const [draft, setDraft] = useState("");
@@ -78,13 +82,35 @@ export function ComposeBar({
             <Pressable
               onPress={onCameraPress}
               disabled={busy || listening}
-              hitSlop={8}
+              hitSlop={6}
               style={({ pressed }) => [
-                styles.cameraBtn,
+                styles.iconBtn,
                 { opacity: busy || listening ? 0.4 : pressed ? 0.7 : 1 },
               ]}
             >
-              <Text style={styles.cameraText}>📷</Text>
+              <Text style={styles.iconText}>📷</Text>
+            </Pressable>
+            <Pressable
+              onPress={onVideoPress}
+              disabled={busy || listening}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                { opacity: busy || listening ? 0.4 : pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={styles.iconText}>🎥</Text>
+            </Pressable>
+            <Pressable
+              onPress={onLivePress}
+              disabled={busy || listening}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                { opacity: busy || listening ? 0.4 : pressed ? 0.7 : 1 },
+              ]}
+            >
+              <Text style={styles.iconText}>👁️</Text>
             </Pressable>
             <Pressable
               onPress={onMicPress}
@@ -155,14 +181,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     maxHeight: 120,
   },
-  cameraBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
   },
-  cameraText: { fontSize: 22 },
+  iconText: { fontSize: 20 },
   micBtn: {
     width: 40,
     height: 40,

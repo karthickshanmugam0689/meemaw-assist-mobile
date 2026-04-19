@@ -26,7 +26,19 @@ export type StringKey =
   | "voiceSpeaking"
   | "voiceTapToStop"
   | "voiceExit"
-  | "voiceSaySomething";
+  | "voiceSaySomething"
+  | "voiceDiagnostics"
+  | "voiceShowProblem"
+  | "voiceSheetTitle"
+  | "voiceSheetHint"
+  | "voiceTakePhoto"
+  | "voiceTakePhotoHint"
+  | "voiceUploadPhoto"
+  | "voiceUploadPhotoHint"
+  | "voiceLiveVideo"
+  | "voiceLiveVideoHint"
+  | "voiceCancel"
+  | "galleryPermission";
 
 type Dict = Record<StringKey, string>;
 
@@ -36,8 +48,8 @@ type Dict = Record<StringKey, string>;
 const EN: Dict = {
   subtitle: "Tech help that actually helps",
   opening:
-    "Hello! I'm Meemaw. Tell me what's going wrong, or tap the camera button to show me a picture.",
-  thinking: "Meemaw is thinking…",
+    "Hello! I'm FlashFix. Tell me what's going wrong, or tap the camera button to show me a picture.",
+  thinking: "FlashFix is thinking…",
   typeOrTap: "Type, or tap the mic to talk",
   listening: "Listening…",
   describePhoto: "What do you want to know about this?",
@@ -50,15 +62,27 @@ const EN: Dict = {
   youLabel: "You",
   cameraPermission: "Camera permission is needed to take a picture.",
   micPermission:
-    "Microphone permission is needed to talk. Tap the mic again after allowing access in phone Settings → Apps → Meemaw.",
+    "Microphone permission is needed to talk. Tap the mic again after allowing access in phone Settings → Apps → FlashFix.",
   talkBtn: "🎙 Talk",
   voiceModeTitle: "Voice mode",
   voiceListening: "I'm listening…",
   voiceThinking: "Thinking…",
-  voiceSpeaking: "Meemaw is speaking…",
+  voiceSpeaking: "FlashFix is speaking…",
   voiceTapToStop: "Tap the circle to stop",
   voiceExit: "Exit voice mode",
-  voiceSaySomething: "Say something, Meemaw is listening",
+  voiceSaySomething: "Say something, FlashFix is listening",
+  voiceDiagnostics: "🩺 Check my phone",
+  voiceShowProblem: "📷 Show me a problem",
+  voiceSheetTitle: "How do you want to show it?",
+  voiceSheetHint: "Pick one — FlashFix will take it from there.",
+  voiceTakePhoto: "📸 Take a photo",
+  voiceTakePhotoHint: "Use your camera right now",
+  voiceUploadPhoto: "🖼 Pick a photo",
+  voiceUploadPhotoHint: "Choose a picture you already have",
+  voiceLiveVideo: "🎥 Live video",
+  voiceLiveVideoHint: "Hold the camera on the problem and talk",
+  voiceCancel: "Cancel",
+  galleryPermission: "Photo library permission is needed to pick a picture.",
 };
 
 const TRANSLATIONS: Record<string, Partial<Dict>> = {
@@ -66,8 +90,8 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
   es: {
     subtitle: "Ayuda con la tecnología que de verdad ayuda",
     opening:
-      "¡Hola! Soy Meemaw. Dime qué está pasando, o toca el botón de la cámara para enseñarme una foto.",
-    thinking: "Meemaw está pensando…",
+      "¡Hola! Soy FlashFix. Dime qué está pasando, o toca el botón de la cámara para enseñarme una foto.",
+    thinking: "FlashFix está pensando…",
     typeOrTap: "Escribe, o pulsa el micrófono para hablar",
     listening: "Escuchando…",
     describePhoto: "¿Qué quieres saber sobre esto?",
@@ -80,21 +104,21 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Tú",
     cameraPermission: "Se necesita permiso de cámara para sacar una foto.",
     micPermission:
-      "Se necesita permiso de micrófono para hablar. Toca el micrófono otra vez después de permitirlo en Ajustes → Apps → Meemaw.",
+      "Se necesita permiso de micrófono para hablar. Toca el micrófono otra vez después de permitirlo en Ajustes → Apps → FlashFix.",
     talkBtn: "🎙 Hablar",
     voiceModeTitle: "Modo voz",
     voiceListening: "Te escucho…",
     voiceThinking: "Pensando…",
-    voiceSpeaking: "Meemaw está hablando…",
+    voiceSpeaking: "FlashFix está hablando…",
     voiceTapToStop: "Toca el círculo para parar",
     voiceExit: "Salir del modo voz",
-    voiceSaySomething: "Dime algo, Meemaw te escucha",
+    voiceSaySomething: "Dime algo, FlashFix te escucha",
   },
   fr: {
     subtitle: "Une aide technique qui aide vraiment",
     opening:
-      "Bonjour ! Je suis Meemaw. Dites-moi ce qui ne va pas, ou touchez le bouton caméra pour me montrer une photo.",
-    thinking: "Meemaw réfléchit…",
+      "Bonjour ! Je suis FlashFix. Dites-moi ce qui ne va pas, ou touchez le bouton caméra pour me montrer une photo.",
+    thinking: "FlashFix réfléchit…",
     typeOrTap: "Écrivez, ou touchez le micro pour parler",
     listening: "J'écoute…",
     describePhoto: "Que voulez-vous savoir à ce sujet ?",
@@ -107,13 +131,13 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Vous",
     cameraPermission: "L'accès à la caméra est nécessaire pour prendre une photo.",
     micPermission:
-      "L'accès au micro est nécessaire pour parler. Touchez le micro à nouveau après avoir autorisé l'accès dans Réglages → Apps → Meemaw.",
+      "L'accès au micro est nécessaire pour parler. Touchez le micro à nouveau après avoir autorisé l'accès dans Réglages → Apps → FlashFix.",
   },
   de: {
     subtitle: "Technik-Hilfe, die wirklich hilft",
     opening:
-      "Hallo! Ich bin Meemaw. Sag mir, was nicht klappt, oder tippe auf die Kamera, um mir ein Bild zu zeigen.",
-    thinking: "Meemaw denkt nach…",
+      "Hallo! Ich bin FlashFix. Sag mir, was nicht klappt, oder tippe auf die Kamera, um mir ein Bild zu zeigen.",
+    thinking: "FlashFix denkt nach…",
     typeOrTap: "Tippe, oder drücke das Mikrofon zum Sprechen",
     listening: "Ich höre zu…",
     describePhoto: "Was möchtest du darüber wissen?",
@@ -126,21 +150,21 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Du",
     cameraPermission: "Für ein Foto wird die Kamera-Erlaubnis gebraucht.",
     micPermission:
-      "Für das Sprechen wird das Mikrofon gebraucht. Tippe erneut aufs Mikro, nachdem du den Zugriff in Einstellungen → Apps → Meemaw erlaubt hast.",
+      "Für das Sprechen wird das Mikrofon gebraucht. Tippe erneut aufs Mikro, nachdem du den Zugriff in Einstellungen → Apps → FlashFix erlaubt hast.",
     talkBtn: "🎙 Sprechen",
     voiceModeTitle: "Sprachmodus",
     voiceListening: "Ich höre zu…",
     voiceThinking: "Denke nach…",
-    voiceSpeaking: "Meemaw spricht…",
+    voiceSpeaking: "FlashFix spricht…",
     voiceTapToStop: "Tippe auf den Kreis zum Stoppen",
     voiceExit: "Sprachmodus beenden",
-    voiceSaySomething: "Sag etwas, Meemaw hört zu",
+    voiceSaySomething: "Sag etwas, FlashFix hört zu",
   },
   it: {
     subtitle: "Aiuto tecnologico che aiuta davvero",
     opening:
-      "Ciao! Sono Meemaw. Dimmi cosa non va, o tocca la fotocamera per mostrarmi una foto.",
-    thinking: "Meemaw sta pensando…",
+      "Ciao! Sono FlashFix. Dimmi cosa non va, o tocca la fotocamera per mostrarmi una foto.",
+    thinking: "FlashFix sta pensando…",
     typeOrTap: "Scrivi, o tocca il microfono per parlare",
     listening: "Ascolto…",
     describePhoto: "Cosa vuoi sapere su questo?",
@@ -153,13 +177,13 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Tu",
     cameraPermission: "Serve il permesso della fotocamera per fare una foto.",
     micPermission:
-      "Serve il permesso del microfono per parlare. Tocca di nuovo il microfono dopo aver concesso l'accesso in Impostazioni → App → Meemaw.",
+      "Serve il permesso del microfono per parlare. Tocca di nuovo il microfono dopo aver concesso l'accesso in Impostazioni → App → FlashFix.",
   },
   pt: {
     subtitle: "Ajuda tecnológica que ajuda de verdade",
     opening:
-      "Olá! Sou a Meemaw. Diga-me o que está a correr mal, ou toque no botão da câmara para me mostrar uma foto.",
-    thinking: "Meemaw está a pensar…",
+      "Olá! Sou a FlashFix. Diga-me o que está a correr mal, ou toque no botão da câmara para me mostrar uma foto.",
+    thinking: "FlashFix está a pensar…",
     typeOrTap: "Escreva, ou toque no microfone para falar",
     listening: "A ouvir…",
     describePhoto: "O que quer saber sobre isto?",
@@ -172,7 +196,7 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Você",
     cameraPermission: "É preciso permissão da câmara para tirar uma foto.",
     micPermission:
-      "É preciso permissão do microfone para falar. Toque no microfone de novo depois de permitir em Definições → Apps → Meemaw.",
+      "É preciso permissão do microfone para falar. Toque no microfone de novo depois de permitir em Definições → Apps → FlashFix.",
   },
   hi: {
     subtitle: "तकनीक की मदद जो सच में काम आती है",
@@ -191,7 +215,7 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "आप",
     cameraPermission: "तस्वीर लेने के लिए कैमरे की अनुमति चाहिए।",
     micPermission:
-      "बोलने के लिए माइक की अनुमति चाहिए। फ़ोन Settings → Apps → Meemaw में अनुमति देने के बाद फिर से माइक दबाइए।",
+      "बोलने के लिए माइक की अनुमति चाहिए। फ़ोन Settings → Apps → FlashFix में अनुमति देने के बाद फिर से माइक दबाइए।",
   },
   ta: {
     subtitle: "உண்மையிலேயே உதவும் தொழில்நுட்ப உதவி",
@@ -210,13 +234,13 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "நீங்கள்",
     cameraPermission: "படம் எடுக்க கேமரா அனுமதி தேவை.",
     micPermission:
-      "பேச மைக்ரோஃபோன் அனுமதி தேவை. Settings → Apps → Meemaw-இல் அனுமதி வழங்கிய பிறகு மீண்டும் மைக்கை அழுத்துங்கள்.",
+      "பேச மைக்ரோஃபோன் அனுமதி தேவை. Settings → Apps → FlashFix-இல் அனுமதி வழங்கிய பிறகு மீண்டும் மைக்கை அழுத்துங்கள்.",
   },
   sk: {
     subtitle: "Technická pomoc, ktorá naozaj pomáha",
     opening:
-      "Ahoj! Som Meemaw. Povedz mi, čo sa deje, alebo klikni na tlačidlo fotoaparátu a ukáž mi obrázok.",
-    thinking: "Meemaw rozmýšľa…",
+      "Ahoj! Som FlashFix. Povedz mi, čo sa deje, alebo klikni na tlačidlo fotoaparátu a ukáž mi obrázok.",
+    thinking: "FlashFix rozmýšľa…",
     typeOrTap: "Napíš, alebo klikni na mikrofón a hovor",
     listening: "Počúvam…",
     describePhoto: "Čo by si chcel o tomto vedieť?",
@@ -229,20 +253,20 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "Ty",
     cameraPermission: "Na odfotenie je potrebné povolenie fotoaparátu.",
     micPermission:
-      "Na rozprávanie je potrebné povolenie mikrofónu. Klikni na mikrofón znova po udelení povolenia v Nastavenia → Aplikácie → Meemaw.",
+      "Na rozprávanie je potrebné povolenie mikrofónu. Klikni na mikrofón znova po udelení povolenia v Nastavenia → Aplikácie → FlashFix.",
     talkBtn: "🎙 Hovor",
     voiceModeTitle: "Hlasový režim",
     voiceListening: "Počúvam…",
     voiceThinking: "Rozmýšľam…",
-    voiceSpeaking: "Meemaw hovorí…",
+    voiceSpeaking: "FlashFix hovorí…",
     voiceTapToStop: "Klikni na krúžok pre zastavenie",
     voiceExit: "Ukončiť hlasový režim",
-    voiceSaySomething: "Povedz niečo, Meemaw počúva",
+    voiceSaySomething: "Povedz niečo, FlashFix počúva",
   },
   zh: {
     subtitle: "真正有用的科技帮助",
-    opening: "你好！我是Meemaw。告诉我哪里不对劲，或者点击相机按钮给我看一张照片。",
-    thinking: "Meemaw正在想…",
+    opening: "你好！我是FlashFix。告诉我哪里不对劲，或者点击相机按钮给我看一张照片。",
+    thinking: "FlashFix正在想…",
     typeOrTap: "输入文字，或点击麦克风说话",
     listening: "正在听…",
     describePhoto: "你想知道关于这个的什么？",
@@ -255,13 +279,13 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "你",
     cameraPermission: "需要相机权限才能拍照。",
     micPermission:
-      "需要麦克风权限才能说话。在手机设置 → 应用 → Meemaw 中允许访问后，再次点击麦克风。",
+      "需要麦克风权限才能说话。在手机设置 → 应用 → FlashFix 中允许访问后，再次点击麦克风。",
   },
   ja: {
     subtitle: "本当に役立つテクノロジーのお手伝い",
     opening:
-      "こんにちは！Meemawです。何が起こっているか教えてね、または写真を見せるにはカメラボタンを押してください。",
-    thinking: "Meemawが考えています…",
+      "こんにちは！FlashFixです。何が起こっているか教えてね、または写真を見せるにはカメラボタンを押してください。",
+    thinking: "FlashFixが考えています…",
     typeOrTap: "入力するか、マイクをタップして話してね",
     listening: "聞いています…",
     describePhoto: "これについて何を知りたい？",
@@ -274,7 +298,7 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "あなた",
     cameraPermission: "写真を撮るにはカメラの許可が必要です。",
     micPermission:
-      "話すにはマイクの許可が必要です。設定 → アプリ → Meemaw でアクセスを許可してから、もう一度マイクをタップしてください。",
+      "話すにはマイクの許可が必要です。設定 → アプリ → FlashFix でアクセスを許可してから、もう一度マイクをタップしてください。",
   },
   ar: {
     subtitle: "مساعدة تقنية تُساعد فعلاً",
@@ -293,7 +317,7 @@ const TRANSLATIONS: Record<string, Partial<Dict>> = {
     youLabel: "أنت",
     cameraPermission: "الكاميرا بحاجة إلى إذن لالتقاط صورة.",
     micPermission:
-      "الميكروفون بحاجة إلى إذن للتحدث. اضغط على الميكروفون مرة أخرى بعد السماح بالوصول في الإعدادات → التطبيقات → Meemaw.",
+      "الميكروفون بحاجة إلى إذن للتحدث. اضغط على الميكروفون مرة أخرى بعد السماح بالوصول في الإعدادات → التطبيقات → FlashFix.",
   },
 };
 

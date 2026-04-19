@@ -54,6 +54,19 @@ export function savePhoto(sourceUri: string, turnId: string): string {
   return fileName;
 }
 
+/** Download a remote image (e.g. Kosi's annotated result) into persistent
+ *  storage. Returns the fileName to store in memory.json. */
+export async function saveRemotePhoto(
+  url: string,
+  turnId: string
+): Promise<string> {
+  const fileName = `${turnId}.jpg`;
+  const dest = new File(photosDir(), fileName);
+  if (dest.exists) dest.delete();
+  await File.downloadFileAsync(url, dest, { idempotent: true });
+  return fileName;
+}
+
 /** Resolve a stored photo back to a file:// URI the Image component can load. */
 export function photoUri(fileName: string): string {
   return new File(photosDir(), fileName).uri;

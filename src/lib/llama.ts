@@ -1,6 +1,6 @@
 import { File, Paths } from "expo-file-system";
 import { initLlama, type LlamaContext } from "llama.rn";
-import { MEEMAW_SYSTEM_PROMPT } from "./prompts";
+import { MEEMAW_LOCAL_SYSTEM_PROMPT } from "./prompts";
 import type { ChatMessage } from "./openai";
 
 /**
@@ -89,7 +89,7 @@ export async function loadEngine(): Promise<LlamaContext> {
   if (!target.exists) throw new Error("model not downloaded");
   loading = initLlama({
     model: target.uri.replace(/^file:\/\//, ""),
-    n_ctx: 2048,
+    n_ctx: 4096,
     n_gpu_layers: 0,
     use_mlock: false,
   }).then((c) => {
@@ -100,12 +100,27 @@ export async function loadEngine(): Promise<LlamaContext> {
   return loading;
 }
 
+// The on-device model has a tight context window. Keep all system messages
+// (system prompt, language pin, recall hint) but trim user/assistant turns to
+// the most recent MAX_TURNS so long conversations don't blow the window.
+const MAX_TURNS = 6;
+
+function trimForLocal(history: ChatMessage[]): ChatMessage[] {
+  const systems = history.filter((m) => m.role === "system");
+  const convo = history.filter((m) => m.role !== "system");
+  const recent = convo.slice(-MAX_TURNS);
+  return [...systems, ...recent];
+}
+
 export async function llamaChat(history: ChatMessage[]): Promise<string> {
   const engine = await loadEngine();
+  const trimmed = trimForLocal(history);
   const res = await engine.completion({
-    messages: [{ role: "system", content: MEEMAW_SYSTEM_PROMPT }, ...history],
+    messages: [{ role: "system", content: MEEMAW_LOCAL_SYSTEM_PROMPT }, ...trimmed],
     n_predict: 200,
-    temperature: 0.7,
+    // Lower temp so the 0.5B model follows the compact persona prompt
+    // instead of rambling off-script.
+    temperature: 0.4,
     stop: ["</s>", "<|end|>", "<|im_end|>", "<|eot_id|>"],
   });
   return (res.text ?? "").trim();

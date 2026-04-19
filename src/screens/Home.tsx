@@ -40,6 +40,7 @@ import {
   makeId,
   photoUri,
   savePhoto,
+  saveRemotePhoto,
   searchTurns,
   startConversation,
   type Conversation,
@@ -47,9 +48,19 @@ import {
   type SearchHit,
   type StoredImage,
 } from "../lib/memory";
+import { hasKosi, kosiAnalyze } from "../lib/kosi";
+import {
+  DIAGNOSTIC_KEYS,
+  formatDiagnosticsAsMessage,
+  isDiagnosticsEnabled,
+  runDiagnostic,
+  type DiagnosticKey,
+} from "../lib/diagnostics";
 import { SettingsPanel } from "./Settings";
 import { HistoryScreen } from "./History";
 import { VoiceModeScreen, type VoiceState } from "./VoiceMode";
+import { LiveAssistScreen } from "./LiveAssist";
+import { LiveOverlayScreen } from "./LiveOverlay";
 import { waitForSilence } from "../lib/vad";
 
 type UIMessage = ChatMessage & {
@@ -62,8 +73,59 @@ type UIMessage = ChatMessage & {
 };
 
 type InputMode = "voice" | "text";
-type Panel = "chat" | "settings" | "history" | "voice";
+type Panel = "chat" | "settings" | "history" | "voice" | "liveassist" | "liveview";
 type Snapshot = { activeConvId: string | null; messages: UIMessage[] };
+
+const LIVE_PLACEHOLDER_RE = /^(🎥\s*Live Assist|👁️\s*Live View)\s*$/;
+const stripLeadingMediaEmoji = (s: string) =>
+  s.replace(/^(📷|🎥|👁️)\s*/, "").trim();
+
+/**
+ * Find the user's most recent substantive request — the one they'd expect Live
+ * Assist/Live View to inherit. Walks in-session messages first, then persisted
+ * memory. Also returns the assistant's follow-up (if any) so the Kosi server
+ * knows the video/photo is a response to that clarifying question.
+ */
+function pickLiveContext(messages: UIMessage[]): {
+  intent: string;
+  assistantFollowUp: string | null;
+} {
+  let intent = "";
+  let intentIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "user") continue;
+    if (LIVE_PLACEHOLDER_RE.test(m.content.trim())) continue;
+    const cleaned = stripLeadingMediaEmoji(m.content);
+    if (!cleaned) continue;
+    intent = cleaned;
+    intentIdx = i;
+    break;
+  }
+
+  if (!intent) {
+    try {
+      const convs = loadConversations();
+      for (const c of convs) {
+        for (let i = c.turns.length - 1; i >= 0; i--) {
+          const cleaned = stripLeadingMediaEmoji(c.turns[i].query ?? "");
+          if (!cleaned || LIVE_PLACEHOLDER_RE.test(cleaned)) continue;
+          return { intent: cleaned, assistantFollowUp: null };
+        }
+      }
+    } catch {}
+    return { intent: "", assistantFollowUp: null };
+  }
+
+  let assistantFollowUp: string | null = null;
+  for (let i = intentIdx + 1; i < messages.length; i++) {
+    if (messages[i].role === "assistant") {
+      assistantFollowUp = messages[i].content.trim() || null;
+      break;
+    }
+  }
+  return { intent, assistantFollowUp };
+}
 
 export function Home() {
   const [composeMode, setComposeMode] = useState<ComposeMode>("idle");
@@ -325,7 +387,10 @@ export function Home() {
       setComposeMode("thinking");
 
       try {
-        const { reply, searchQuery } = await chatWithMode(historyForLLM, engineMode);
+        const { reply, searchQuery } = await chatWithMode(
+          historyForLLM,
+          engineMode
+        );
         setMessages((m) => [
           ...m,
           {
@@ -342,7 +407,6 @@ export function Home() {
           },
         ]);
         if (top) hasShownPillRef.current = true;
-        // 3) store this Q/A so future queries can recall it
         remember(userText, reply);
         await speakIfVoiceNow(reply, opts.spoken);
       } catch (e) {
@@ -572,7 +636,7 @@ export function Home() {
       const perm = await requestRecordingPermissionsAsync();
       if (!perm.granted) {
         setError(
-          "Microphone permission is needed for voice mode. Allow access in phone Settings → Apps → Meemaw."
+          "Microphone permission is needed for voice mode. Allow access in phone Settings → Apps → FlashFix."
         );
         setPanel("chat");
         return;
@@ -596,6 +660,38 @@ export function Home() {
     };
   }, [panel, doVoiceTurn, recorder]);
 
+  const handleVideoPress = useCallback(() => {
+    // Stop any in-flight tap-mode recording before switching screens.
+    try { recorder.stop().catch(() => {}); } catch {}
+    ttsHandleRef.current?.stop();
+    ttsHandleRef.current = null;
+    setPanel("liveassist");
+  }, [recorder]);
+
+  const handleLivePress = useCallback(() => {
+    try { recorder.stop().catch(() => {}); } catch {}
+    ttsHandleRef.current?.stop();
+    ttsHandleRef.current = null;
+    setPanel("liveview");
+  }, [recorder]);
+
+  const handleDiagnosticPress = useCallback(async () => {
+    if (!isDiagnosticsEnabled()) return;
+    setError(null);
+    setComposeMode("thinking");
+    try {
+      const results = await runDiagnostic(DIAGNOSTIC_KEYS as DiagnosticKey[]);
+      const summary = formatDiagnosticsAsMessage(results);
+      // Post the summary as a regular user message, then let respond() do the
+      // rest — LLM sees it as chat text and replies in plain English. No
+      // two-turn magic, no schema field, no silent failures.
+      await respond(summary, { spoken: false });
+    } catch (e) {
+      setComposeMode("idle");
+      setError(e instanceof Error ? e.message : "diagnostic failed");
+    }
+  }, [respond]);
+
   const handleCamera = useCallback(async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -609,7 +705,22 @@ export function Home() {
     if (result.canceled) return;
     const asset = result.assets[0];
     if (asset?.uri) setPendingImage(asset.uri);
-  }, []);
+  }, [language]);
+
+  const handleUploadPhoto = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError(tFor(language)("galleryPermission"));
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (asset?.uri) setPendingImage(asset.uri);
+  }, [language]);
 
   const handleSendText = useCallback(
     async (text: string) => {
@@ -625,47 +736,91 @@ export function Home() {
         ]);
         setComposeMode("thinking");
         try {
-          if (!hasOpenAIKey()) {
-            throw new Error(
-              "Vision needs an OpenAI key. Set EXPO_PUBLIC_OPENAI_API_KEY to enable it."
-            );
-          }
+          // Resize once — Kosi accepts JPEG, OpenAI fallback needs base64.
           const { uri: resizedUri, base64 } = await resizeToJpegBase64(imageUri);
-          const contextHistory: ChatMessage[] = [
-            ...messages
-              .filter((m) => !m.image)
-              .slice(-6)
-              .map((m) => ({ role: m.role, content: m.content })),
-            { role: "user", content: description },
-          ];
-          const vision = await openaiVision(base64, contextHistory);
 
-          // Persist the resized image into Paths.document/photos/ so it
-          // survives app restarts and can be shown when this conversation
-          // is reopened from History.
-          const photoId = makeId();
-          let persistedUri = resizedUri;
+          let assistantText = "";
+          let photoDisplayUri = resizedUri;
+          let displayRegions: Region[] = [];
+          let followup = "";
           let storedImage: StoredImage | undefined;
-          try {
-            const fileName = savePhoto(resizedUri, photoId);
-            persistedUri = photoUri(fileName);
-            storedImage = { fileName, regions: vision.regions };
-          } catch (err) {
-            console.warn("photo persist failed", err);
+          const photoId = makeId();
+
+          if (hasKosi()) {
+            // Kosi path: YOLO-World detection + GPT-4o guidance. We display
+            // Kosi's annotated image (with ALL step-target boxes drawn by the
+            // server) rather than the original, because fine-grained parts
+            // (power button, USB connector) are localised via the step-target
+            // pass and only appear in the annotated image.
+            const kosi = await kosiAnalyze(resizedUri, description);
+            assistantText = kosi.instructions;
+            // Empty regions → no overlay from us, annotations baked in.
+            displayRegions = [];
+            // Tell the user gently when the pipeline wanted to point at
+            // something but couldn't find it in the frame (e.g. USB port on
+            // the side of a laptop photographed face-on).
+            if (kosi.unfoundTargets && kosi.unfoundTargets.length > 0) {
+              const unique = Array.from(
+                new Set(kosi.unfoundTargets.map((s) => s.trim().toLowerCase()))
+              ).filter(Boolean);
+              // Drop substrings ("laptop" when we also have "base of the laptop")
+              const distinct = unique.filter(
+                (t) => !unique.some((o) => o !== t && o.includes(t))
+              );
+              const shown = distinct.slice(0, 3);
+              const joined =
+                shown.length === 1
+                  ? shown[0]
+                  : shown.slice(0, -1).join(", ") + " and " + shown[shown.length - 1];
+              followup = `I couldn't spot the ${joined} in this photo. If you can, try another picture from a different angle so I can point at it for you.`;
+            }
+            try {
+              const fileName = await saveRemotePhoto(kosi.imageUrl, photoId);
+              photoDisplayUri = photoUri(fileName);
+              storedImage = { fileName, regions: [] };
+            } catch (err) {
+              console.warn("kosi photo persist failed", err);
+              photoDisplayUri = kosi.imageUrl;
+            }
+          } else {
+            // Fallback: OpenAI GPT-4o vision directly, with our own overlay.
+            if (!hasOpenAIKey()) {
+              throw new Error(
+                "Vision needs either Kosi (EXPO_PUBLIC_KOSI_URL) or OpenAI (EXPO_PUBLIC_OPENAI_API_KEY)."
+              );
+            }
+            const contextHistory: ChatMessage[] = [
+              ...messages
+                .filter((m) => !m.image)
+                .slice(-6)
+                .map((m) => ({ role: m.role, content: m.content })),
+              { role: "user", content: description },
+            ];
+            const vision = await openaiVision(base64, contextHistory);
+            assistantText = vision.explanation;
+            followup = vision.followup;
+            displayRegions = vision.regions;
+            try {
+              const fileName = savePhoto(resizedUri, photoId);
+              photoDisplayUri = photoUri(fileName);
+              storedImage = { fileName, regions: vision.regions };
+            } catch (err) {
+              console.warn("photo persist failed", err);
+            }
           }
 
+          const combinedReply = followup
+            ? `${assistantText}\n\n${followup}`
+            : assistantText;
           setMessages((m) => [
             ...m,
             {
               role: "assistant",
-              content: vision.explanation,
-              image: { url: persistedUri, regions: vision.regions },
+              content: combinedReply,
+              image: { url: photoDisplayUri, regions: displayRegions },
             },
-            ...(vision.followup
-              ? [{ role: "assistant" as const, content: vision.followup }]
-              : []),
           ]);
-          remember(`📷 ${description}`, vision.explanation, storedImage);
+          remember(`📷 ${description}`, combinedReply, storedImage);
           setComposeMode("idle");
         } catch (e) {
           setComposeMode("idle");
@@ -691,6 +846,10 @@ export function Home() {
   }
 
   if (panel === "voice") {
+    const leaveVoice = () => {
+      voiceCancelRef.current = true;
+      setPanel("chat");
+    };
     return (
       <LanguageProvider value={language}>
         <VoiceModeScreen
@@ -700,12 +859,102 @@ export function Home() {
           onTapCircle={() => {
             voiceTapStopRef.current = true;
           }}
-          onExit={() => {
+          onExit={leaveVoice}
+          diagnosticsEnabled={isDiagnosticsEnabled()}
+          onDiagnostics={() => {
+            leaveVoice();
+            handleDiagnosticPress();
+          }}
+          onRecordPhoto={() => {
+            leaveVoice();
+            handleCamera();
+          }}
+          onUploadPhoto={() => {
+            leaveVoice();
+            handleUploadPhoto();
+          }}
+          onLiveAssist={() => {
             voiceCancelRef.current = true;
-            setPanel("chat");
+            handleVideoPress();
           }}
         />
       </LanguageProvider>
+    );
+  }
+
+  if (panel === "liveassist") {
+    // Seed the issue from the user's last substantive message (falling back to
+    // persisted memory), and pass FlashFix's follow-up question as context so
+    // the LLM knows the video is a response to that clarifying turn.
+    const { intent, assistantFollowUp } = pickLiveContext(messages);
+    return (
+      <LiveAssistScreen
+        initialIssue={intent}
+        assistantContext={assistantFollowUp}
+        onCancel={() => setPanel("chat")}
+        onDone={async ({ text, annotatedUrl }) => {
+          // Persist the annotated frame locally so it survives across restarts.
+          const photoId = makeId();
+          let savedUri: string | null = null;
+          let storedImage: StoredImage | undefined;
+          if (annotatedUrl) {
+            try {
+              const fileName = await saveRemotePhoto(annotatedUrl, photoId);
+              savedUri = photoUri(fileName);
+              storedImage = { fileName, regions: [] };
+            } catch (err) {
+              console.warn("live assist photo persist failed", err);
+              savedUri = annotatedUrl;
+            }
+          }
+          setMessages((m) => [
+            ...m,
+            { role: "user", content: "🎥 Live Assist" },
+            {
+              role: "assistant",
+              content: text,
+              image: savedUri ? { url: savedUri, regions: [] } : undefined,
+            },
+          ]);
+          remember("🎥 Live Assist", text, storedImage);
+          setPanel("chat");
+        }}
+      />
+    );
+  }
+
+  if (panel === "liveview") {
+    const { intent, assistantFollowUp } = pickLiveContext(messages);
+    return (
+      <LiveOverlayScreen
+        issue={intent}
+        assistantContext={assistantFollowUp}
+        onClose={() => setPanel("chat")}
+        onDone={async ({ instructions, imageUrl }) => {
+          const photoId = makeId();
+          let savedUri: string | null = null;
+          let storedImage: StoredImage | undefined;
+          try {
+            const fileName = await saveRemotePhoto(imageUrl, photoId);
+            savedUri = photoUri(fileName);
+            storedImage = { fileName, regions: [] };
+          } catch (err) {
+            console.warn("liveview photo persist failed", err);
+            savedUri = imageUrl;
+          }
+          setMessages((m) => [
+            ...m,
+            { role: "user", content: "👁️ Live View" },
+            {
+              role: "assistant",
+              content: instructions,
+              image: savedUri ? { url: savedUri, regions: [] } : undefined,
+            },
+          ]);
+          remember("👁️ Live View", instructions, storedImage);
+          setPanel("chat");
+        }}
+      />
     );
   }
 
@@ -743,7 +992,7 @@ export function Home() {
             <Text style={styles.logoText}>M</Text>
           </View>
           <View>
-            <Text style={styles.title}>Meemaw</Text>
+            <Text style={styles.title}>FlashFix</Text>
             <View style={styles.subtitleRow}>
               <Text style={styles.langChip}>
                 🌍 {getLanguage(language).nativeName}
@@ -779,6 +1028,15 @@ export function Home() {
           >
             <Text style={styles.newBtnText}>+ New</Text>
           </Pressable>
+          {isDiagnosticsEnabled() ? (
+            <Pressable
+              onPress={handleDiagnosticPress}
+              hitSlop={8}
+              style={({ pressed }) => [styles.menuBtn, { opacity: pressed ? 0.6 : 1 }]}
+            >
+              <Text style={styles.menuText}>🩺</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => setPanel("history")}
             hitSlop={8}
@@ -840,6 +1098,8 @@ export function Home() {
         onSendText={handleSendText}
         onMicPress={handleMic}
         onCameraPress={handleCamera}
+        onVideoPress={handleVideoPress}
+        onLivePress={handleLivePress}
       />
     </View>
     </LanguageProvider>

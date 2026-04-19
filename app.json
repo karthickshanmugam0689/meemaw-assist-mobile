@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Meemaw Assist",
+    "name": "FlashFix",
     "slug": "meemaw-assist",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -16,9 +16,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.meemaw.assist",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Meemaw listens to your voice so she can help.",
-        "NSCameraUsageDescription": "Meemaw looks at photos so she can help with what you see.",
-        "NSPhotoLibraryUsageDescription": "Meemaw looks at photos so she can help with what you see."
+        "NSMicrophoneUsageDescription": "FlashFix listens to your voice so she can help.",
+        "NSCameraUsageDescription": "FlashFix looks at photos so she can help with what you see.",
+        "NSPhotoLibraryUsageDescription": "FlashFix looks at photos so she can help with what you see."
       }
     },
     "android": {
@@ -56,13 +56,13 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Meemaw listens to your voice so she can help."
+          "microphonePermission": "FlashFix listens to your voice so she can help."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Meemaw looks at photos so she can help.",
+          "cameraPermission": "FlashFix looks at photos so she can help.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -70,8 +70,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Meemaw looks at photos so she can help.",
-          "cameraPermission": "Meemaw looks at photos so she can help."
+          "photosPermission": "FlashFix looks at photos so she can help.",
+          "cameraPermission": "FlashFix looks at photos so she can help."
         }
       ]
     ],

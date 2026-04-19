@@ -17,6 +17,16 @@ import {
 import { hasOpenAIKey } from "../lib/openai";
 import type { EngineMode } from "../lib/engine";
 import { LANGUAGES, getLanguage } from "../lib/languages";
+import {
+  CHAT_CHOICES,
+  VISION_CHOICES,
+  getChatChoice,
+  getVisionChoice,
+  setChatChoice,
+  setVisionChoice,
+  type ChatModelChoice,
+  type VisionModelChoice,
+} from "../lib/modelOverride";
 
 export function SettingsPanel({
   mode,
@@ -34,6 +44,17 @@ export function SettingsPanel({
   const [downloaded, setDownloaded] = useState(isModelDownloaded());
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const [chatChoice, setChatChoiceState] = useState<ChatModelChoice>(getChatChoice());
+  const [visionChoice, setVisionChoiceState] = useState<VisionModelChoice>(getVisionChoice());
+
+  const onChatPick = (c: ChatModelChoice) => {
+    setChatChoice(c);
+    setChatChoiceState(c);
+  };
+  const onVisionPick = (c: VisionModelChoice) => {
+    setVisionChoice(c);
+    setVisionChoiceState(c);
+  };
 
   useEffect(() => {
     setDownloaded(isModelDownloaded());
@@ -45,7 +66,7 @@ export function SettingsPanel({
     try {
       await downloadModel((p) => setProgress(p));
       setDownloaded(true);
-      Alert.alert("Model ready", "Meemaw can now work without the internet.");
+      Alert.alert("Model ready", "FlashFix can now work without the internet.");
     } catch (e) {
       Alert.alert("Download failed", e instanceof Error ? e.message : "unknown error");
     } finally {
@@ -75,8 +96,8 @@ export function SettingsPanel({
 
       <Text style={styles.section}>Language</Text>
       <Text style={styles.hint}>
-        Pick how Meemaw should reply. “Auto-detect” follows whatever language
-        you write in. Once you choose a language, Meemaw will speak and reply
+        Pick how FlashFix should reply. “Auto-detect” follows whatever language
+        you write in. Once you choose a language, FlashFix will speak and reply
         in it from then on.
       </Text>
       <Text style={styles.currentLang}>
@@ -123,6 +144,65 @@ export function SettingsPanel({
             </Text>
           </Pressable>
         ))}
+      </View>
+
+      <Text style={styles.section}>Chat model (cloud)</Text>
+      <Text style={styles.hint}>
+        Which OpenAI model to use for text + voice replies. Higher-tier models
+        follow the FlashFix persona more precisely but cost more and may be a
+        touch slower.
+      </Text>
+      <View style={styles.modelCol}>
+        {CHAT_CHOICES.map((c) => {
+          const selected = c.value === chatChoice;
+          return (
+            <Pressable
+              key={c.value}
+              onPress={() => onChatPick(c.value)}
+              style={[styles.modelBtn, selected && styles.modelBtnActive]}
+            >
+              <Text
+                style={[styles.modelLabel, selected && styles.modelLabelActive]}
+              >
+                {c.label}
+              </Text>
+              <Text
+                style={[styles.modelHint, selected && styles.modelHintActive]}
+              >
+                {c.hint}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={styles.section}>Vision model (photo overlay)</Text>
+      <Text style={styles.hint}>
+        Which model analyses photos and draws the red box. GPT-5 has stronger
+        spatial reasoning; GPT-4o is proven and fast.
+      </Text>
+      <View style={styles.modelCol}>
+        {VISION_CHOICES.map((c) => {
+          const selected = c.value === visionChoice;
+          return (
+            <Pressable
+              key={c.value}
+              onPress={() => onVisionPick(c.value)}
+              style={[styles.modelBtn, selected && styles.modelBtnActive]}
+            >
+              <Text
+                style={[styles.modelLabel, selected && styles.modelLabelActive]}
+              >
+                {c.label}
+              </Text>
+              <Text
+                style={[styles.modelHint, selected && styles.modelHintActive]}
+              >
+                {c.hint}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <Text style={styles.section}>On-device model</Text>
@@ -216,4 +296,18 @@ const styles = StyleSheet.create({
   langBtnActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
   langLabel: { color: "#0f172a", fontSize: 14 },
   langLabelActive: { color: "white", fontWeight: "700" },
+  modelCol: { gap: 8, marginBottom: 8 },
+  modelBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#cbd5f5",
+    backgroundColor: "white",
+  },
+  modelBtnActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
+  modelLabel: { color: "#0f172a", fontSize: 15, fontWeight: "700" },
+  modelLabelActive: { color: "white" },
+  modelHint: { color: "#64748b", fontSize: 12, marginTop: 2 },
+  modelHintActive: { color: "#dbeafe" },
 });

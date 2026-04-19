@@ -1,4 +1,10 @@
 import { MEEMAW_SYSTEM_PROMPT, MEEMAW_VISION_PROMPT } from "./prompts";
+import {
+  getChatChoice,
+  getVisionChoice,
+  resolveChatModel,
+  resolveVisionModel,
+} from "./modelOverride";
 
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -48,7 +54,7 @@ const REPLY_SCHEMA = {
     reply: {
       type: "string",
       description:
-        "The warm plain-English text Meemaw says. Obeys every persona rule: short sentences, one step at a time, no markdown.",
+        "The warm plain-English text FlashFix says. Obeys every persona rule: short sentences, one step at a time, no markdown.",
     },
     end: {
       type: "boolean",
@@ -82,11 +88,23 @@ async function postResponses(body: Record<string, unknown>, key: string): Promis
  * If the voice conversation is over, it sets `end: true`. Otherwise both
  * are null/false and only `reply` drives the UI.
  */
+// GPT-5 / o-series are reasoning models: they ignore `temperature`, burn
+// output tokens on internal reasoning, and need way more token headroom.
+function isReasoningModel(model: string): boolean {
+  return model.startsWith("gpt-5") || model.startsWith("o1") || model.startsWith("o3");
+}
+
+function supportsTemperature(model: string): boolean {
+  return !isReasoningModel(model);
+}
+
 export async function openaiChat(history: ChatMessage[]): Promise<ChatResult> {
   const key = requireKey();
+  const chatModel = resolveChatModel(getChatChoice(), MODELS.chat);
+  const reasoning = isReasoningModel(chatModel);
   const data = await postResponses(
     {
-      model: MODELS.chat,
+      model: chatModel,
       instructions: MEEMAW_SYSTEM_PROMPT,
       input: history.map((m) => ({ role: m.role, content: m.content })),
       tools: [{ type: "web_search_preview" }],
@@ -98,7 +116,13 @@ export async function openaiChat(history: ChatMessage[]): Promise<ChatResult> {
           schema: REPLY_SCHEMA,
         },
       },
-      max_output_tokens: 600,
+      // Lower temp = tighter adherence to the persona/jargon rules.
+      ...(supportsTemperature(chatModel) ? { temperature: 0.4 } : {}),
+      // Reasoning models silently eat output budget on internal thinking;
+      // "minimal" keeps replies fast AND gives the 600-token budget back.
+      ...(reasoning ? { reasoning: { effort: "medium" } } : {}),
+      // Reasoning still reserves SOME budget, so give it more headroom.
+      max_output_tokens: reasoning ? 4000 : 600,
     },
     key
   );
@@ -132,8 +156,12 @@ export async function openaiChat(history: ChatMessage[]): Promise<ChatResult> {
   try {
     parsed = JSON.parse(rawJson);
   } catch {
-    // Strict mode makes this unreachable, but degrade gracefully if it happens.
-    return { text: rawJson.trim() };
+    // If JSON parsing fails (rare with strict mode), degrade by pulling out
+    // the first `reply` string we can find. Avoids showing raw `{"reply":…}`
+    // in the chat bubble.
+    const match = rawJson.match(/"reply"\s*:\s*"((?:\\.|[^"\\])*)"/);
+    const fallback = match ? match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n") : rawJson.trim();
+    return { text: fallback, searchQuery };
   }
 
   return {
@@ -192,10 +220,17 @@ export type VisionResult = {
 
 export async function openaiVision(
   imageBase64: string,
-  history: ChatMessage[]
+  history: ChatMessage[],
+  userAsk?: string
 ): Promise<VisionResult> {
   const key = requireKey();
+  const visionModel = resolveVisionModel(getVisionChoice(), MODELS.vision);
   const dataUrl = `data:image/jpeg;base64,${imageBase64}`;
+
+  const askText =
+    userAsk && userAsk.trim()
+      ? `The user is asking: "${userAsk.trim()}". Look at the photo and put your red box on EXACTLY what they asked about. If it isn't visible, return empty regions and ask for another angle.`
+      : "The user sent this photo. Look carefully and help them.";
 
   const messages = [
     { role: "system", content: MEEMAW_VISION_PROMPT },
@@ -203,7 +238,7 @@ export async function openaiVision(
     {
       role: "user",
       content: [
-        { type: "text", text: "The user sent this photo. Look carefully and help them." },
+        { type: "text", text: askText },
         { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
       ],
     },
@@ -216,11 +251,15 @@ export async function openaiVision(
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: MODELS.vision,
+      model: visionModel,
       messages,
       response_format: { type: "json_object" },
-      max_tokens: 500,
-      temperature: 0.5,
+      // Reasoning vision models need more headroom than classic gpt-4o.
+      max_tokens: isReasoningModel(visionModel) ? 4000 : 500,
+      ...(supportsTemperature(visionModel) ? { temperature: 0.5 } : {}),
+      ...(isReasoningModel(visionModel)
+        ? { reasoning_effort: "medium" }
+        : {}),
     }),
   });
   if (!res.ok) throw new Error(`vision ${res.status}: ${await res.text()}`);
